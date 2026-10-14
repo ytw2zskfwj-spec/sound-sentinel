@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sound Sentinel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1320">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sentinel">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" id="touchIcon" href="">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<style>
+:root{
+  --ink:#0E1320; --panel:#171E30; --panel2:#1E2740; --line:#2A3350;
+  --text:#EDEFF5; --muted:#93A0BA; --amber:#FFB020; --red:#FF453A; --teal:#3DD6C6; --blue:#5BA8FF;
+  color-scheme: dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;background:var(--ink);color:var(--text);
+  font-family:ui-rounded,"SF Pro Rounded",-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%}
+body{padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+.app{max-width:520px;margin:0 auto;padding:18px 18px 96px}
+h1{font-size:22px;margin:4px 0 2px;letter-spacing:.2px}
+.tag{color:var(--muted);font-size:15px;margin:0 0 18px;line-height:1.4}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--teal);outline-offset:3px}
+
+/* Tabs */
+.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;gap:6px;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));
+  background:rgba(14,19,32,.94);border-top:1px solid var(--line);z-index:5}
+.tabs button{flex:1;padding:12px 4px;border:0;border-radius:14px;background:transparent;color:var(--muted);font-size:16px;font-weight:600}
+.tabs button[aria-selected="true"]{background:var(--panel2);color:var(--text)}
+.view{display:none}.view.on{display:block}
+
+/* The ear */
+.stage{display:flex;flex-direction:column;align-items:center;margin:10px 0 22px}
+.ear{position:relative;width:216px;height:216px;border:0;background:none;padding:0;cursor:pointer}
+.ear .ring{position:absolute;inset:0;border-radius:50%;border:3px solid var(--line);
+  transform:scale(calc(1 + var(--lvl,0)));transition:transform .12s linear,border-color .3s}
+.ear .ring.r2{inset:-14px;opacity:.5;transform:scale(calc(1 + var(--lvl,0) * 1.6))}
+.ear .core{position:absolute;inset:18px;border-radius:50%;background:var(--panel2);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:4px;border:1px solid var(--line)}
+.ear .core b{font-size:25px}
+.ear .core span{font-size:14px;color:var(--muted);max-width:140px;text-align:center;line-height:1.3}
+body.listening .ear .ring{border-color:var(--teal)}
+body.listening .ear .core{border-color:var(--teal)}
+body.loading .ear .ring{border-color:var(--amber);border-style:dashed}
+.row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px 18px;font-weight:600;font-size:16px;cursor:pointer}
+.btn.primary{background:var(--teal);border-color:var(--teal);color:#06231F}
+.btn.small{padding:8px 12px;font-size:14px}
+.btn:disabled{opacity:.5}
+.msg{min-height:22px;text-align:center;color:var(--muted);font-size:15px;margin:12px 4px 0;line-height:1.4}
+.msg.err{color:#FF9A93}
+
+/* Timeline */
+h2{font-size:18px;margin:26px 0 10px}
+.tl{list-style:none;margin:0;padding:0;border-left:2px solid var(--line);margin-left:10px}
+.tl li{position:relative;padding:8px 0 8px 22px;font-size:17px;display:flex;justify-content:space-between;gap:10px}
+.tl li::before{content:"";position:absolute;left:-7px;top:16px;width:12px;height:12px;border-radius:50%;background:var(--c,var(--teal));border:2px solid var(--ink)}
+.tl time{color:var(--muted);font-size:14px;white-space:nowrap;align-self:center}
+.empty{color:var(--muted);font-size:15px;line-height:1.45;padding:4px 0}
+
+/* Captions */
+.capbox{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;min-height:46vh;max-height:60vh;overflow:auto;
+  font-size:26px;line-height:1.35}
+.capbox p{margin:0 0 .6em}
+.capbox .interim{color:var(--muted)}
+mark{background:var(--amber);color:#201400;border-radius:6px;padding:0 4px}
+select,input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 12px;width:100%}
+
+/* Settings */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:14px}
+.card h3{margin:0 0 6px;font-size:17px}
+.card p{margin:4px 0 10px;color:var(--muted);font-size:14.5px;line-height:1.45}
+.line{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.line:first-of-type{border-top:0}
+.line label{display:flex;align-items:center;gap:10px;font-size:16px;flex:1}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--teal)}
+input[type=range]{width:100%;accent-color:var(--teal);margin:8px 0}
+.scale{display:flex;justify-content:space-between;color:var(--muted);font-size:13px}
+
+/* Alert overlay */
+#alert{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  text-align:center;padding:24px;background:var(--ac,#FFB020);color:#14100A}
+#alert.on{display:flex}
+#alert::before{content:"";position:absolute;inset:0;background:#fff;opacity:0;animation:pulse 1.2s ease-in-out infinite;pointer-events:none}
+@keyframes pulse{0%,100%{opacity:0}50%{opacity:.32}}
+#alert > *{position:relative}
+#alert .ic{font-size:110px;line-height:1}
+#alert .tt{font-size:38px;font-weight:800;line-height:1.1}
+#alert .ss{font-size:19px;opacity:.8}
+#alert button{margin-top:14px;border:0;border-radius:16px;padding:16px 34px;font-size:19px;font-weight:700;background:#14100A;color:#fff}
+
+/* Bedside */
+#bed{position:fixed;inset:0;z-index:40;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#4b5875}
+body.bedside #bed{display:flex}
+#bed b{font-size:20px;font-weight:600}
+#bed span{font-size:14px}
+
+@media (prefers-reduced-motion:reduce){
+  #alert::before{animation:none;opacity:.12}
+  .ear .ring{transition:none}
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <h1>Sound Sentinel</h1>
+  <p class="tag">Your phone listens for important sounds and tells you with a flash and a tone. Audio is processed on this phone and is never uploaded.</p>
+
+  <!-- SOUNDS -->
+  <section class="view on" id="v-sounds" role="tabpanel">
+    <div class="stage">
+      <button class="ear" id="ear" aria-label="Start listening">
+        <div class="ring r2"></div><div class="ring"></div>
+        <div class="core"><b id="earTitle">Start</b><span id="earSub">Tap to listen for sounds</span></div>
+      </button>
+      <div class="row" id="listenRow" hidden>
+        <button class="btn" id="bedBtn">Bedside mode</button>
+      </div>
+      <p class="msg" id="msg" role="status" aria-live="polite"></p>
+    </div>
+
+    <h2>What I heard</h2>
+    <ul class="tl" id="tl"></ul>
+    <p class="empty" id="tlEmpty">Nothing yet. When a sound is recognised it appears here with the time.</p>
+  </section>
+
+  <!-- CAPTIONS -->
+  <section class="view" id="v-caps" role="tabpanel">
+    <div class="card">
+      <h3>Live captions</h3>
+      <p>Turns nearby speech into large text. If someone says your name, it lights up. Sound alerts pause while captions are on.</p>
+      <select id="lang" aria-label="Language">
+        <option value="en-US">English (US)</option>
+        <option value="en-GB">English (UK)</option>
+        <option value="ar-SA">Arabic</option>
+        <option value="es-ES">Spanish</option>
+        <option value="fr-FR">French</option>
+        <option value="de-DE">German</option>
+        <option value="hi-IN">Hindi</option>
+        <option value="ur-PK">Urdu</option>
+      </select>
+      <div class="row"><button class="btn primary" id="capBtn">Start captions</button></div>
+      <p class="msg" id="capMsg" role="status" aria-live="polite"></p>
+    </div>
+    <div class="capbox" id="capbox" aria-live="off"><p class="interim">Captions will appear here.</p></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="v-set" role="tabpanel">
+    <div class="card">
+      <h3>Sensitivity</h3>
+      <p>Raise it if alerts are missed. Lower it if you get false alarms.</p>
+      <input type="range" id="sens" min="1" max="10" step="1" aria-label="Sensitivity">
+      <div class="scale"><span>Fewer alerts</span><span>More alerts</span></div>
+    </div>
+
+    <div class="card">
+      <h3>Alerts</h3>
+      <div class="line"><label><input type="checkbox" id="tone"> Play a tone with each alert</label></div>
+      <p style="margin-top:8px">iPhone web apps can't vibrate, so alerts use a full-screen flash and a tone. Turn the volume up.</p>
+    </div>
+
+    <div class="card">
+      <h3>Your name</h3>
+      <p>Used in Captions to highlight when someone says it.</p>
+      <input type="text" id="myname" placeholder="e.g. Sam" autocomplete="off" autocapitalize="words">
+    </div>
+
+    <div class="card">
+      <h3>Sounds to listen for</h3>
+      <div id="ruleList"></div>
+    </div>
+
+    <div class="card">
+      <h3>Teach a sound (beta)</h3>
+      <p>Start listening first. Name your sound, tap Record, then play it a few times near the phone for 4 seconds.</p>
+      <input type="text" id="cname" placeholder="e.g. Front door buzzer" autocomplete="off">
+      <div class="row"><button class="btn primary" id="teachBtn">Record sound</button></div>
+      <p class="msg" id="teachMsg" role="status" aria-live="polite"></p>
+      <div id="customList"></div>
+    </div>
+
+    <div class="card">
+      <h3>Good to know</h3>
+      <p>Sound Sentinel is a helper, not a replacement for certified smoke or carbon monoxide alarms. It only listens while the app is open and the screen is on. Set Auto-Lock to Never in iPhone Settings → Display &amp; Brightness, and use Bedside mode overnight.</p>
+    </div>
+  </section>
+</main>
+
+<div id="alert" role="alertdialog" aria-live="assertive" aria-label="Sound alert">
+  <div class="ic" id="aIc"></div>
+  <div class="tt" id="aTt"></div>
+  <div class="ss" id="aSs"></div>
+  <button id="aBtn">Dismiss</button>
+</div>
+
+<div id="bed"><b>Listening</b><span>Tap anywhere to leave bedside mode</span></div>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" aria-selected="true" data-v="sounds">Sounds</button>
+  <button role="tab" aria-selected="false" data-v="caps">Captions</button>
+  <button role="tab" aria-selected="false" data-v="set">Settings</button>
+</nav>
+
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- storage (safe) ---------- */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('ss:'+k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem('ss:'+k, JSON.stringify(v)); }catch(e){} }
+};
+const settings = Object.assign({sens:5, tone:true, name:'', off:{}}, store.get('settings', {}));
+let custom = store.get('custom', []);
+const saveSettings = () => store.set('settings', settings);
+
+/* ---------- sound rules ---------- */
+const RULES = [
+  {id:'smoke', label:'Smoke or fire alarm', icon:'🔥', color:'#FF453A', match:['smoke detector','smoke alarm','fire alarm'], critical:true,
+    sub:'Check your home now', beep:[[1000,200],[0,120],[1000,200],[0,120],[1000,200],[0,500]]},
+  {id:'siren', label:'Siren', icon:'🚨', color:'#FF7A45', match:['siren','civil defense'], sub:'Emergency vehicle or alarm nearby',
+    beep:[[700,350],[900,350],[700,350],[900,350]]},
+  {id:'door', label:'Doorbell', icon:'🔔', color:'#FFB020', match:['doorbell','ding-dong'], sub:'Someone is at the door',
+    beep:[[660,180],[0,80],[880,300]]},
+  {id:'knock', label:'Knock', icon:'🚪', color:'#FFB020', match:['knock'], sub:'Someone is knocking',
+    beep:[[520,120],[0,100],[520,120],[0,100],[520,120]]},
+  {id:'baby', label:'Baby crying', icon:'👶', color:'#5BA8FF', match:['baby cry','infant cry'], sub:'A baby is crying',
+    beep:[[600,250],[0,120],[760,250]]},
+  {id:'phone', label:'Phone ringing', icon:'📞', color:'#8E7CFF', match:['telephone bell','ringtone'], sub:'A phone is ringing',
+    beep:[[800,150],[0,60],[800,150],[0,60],[800,150]]},
+  {id:'dog', label:'Dog barking', icon:'🐕', color:'#4FD18B', match:['bark'], sub:'A dog is barking',
+    beep:[[450,160],[0,100],[450,160]]},
+  {id:'horn', label:'Car horn', icon:'🚗', color:'#FFB020', match:['vehicle horn','car horn','honking'], sub:'A horn is sounding',
+    beep:[[420,500]]},
+  {id:'glass', label:'Glass breaking', icon:'🪟', color:'#FF7A45', match:['glass','shatter'], sub:'Something may have broken',
+    beep:[[1200,120],[0,60],[1500,120]]}
+];
+const NAME_ALERT = {id:'name', label:'Someone said your name', icon:'💬', color:'#3DD6C6', sub:'Check the captions', beep:[[700,160],[0,80],[900,160]]};
+const CUSTOM_ALERT = c => ({id:'c:'+c.id, label:c.name, icon:'✨', color:'#3DD6C6', sub:'A sound you taught me', beep:[[740,200],[0,100],[740,200]]});
+
+/* ---------- state ---------- */
+let model=null, names=[], stream=null, actx=null, proc=null, srcNode=null, muteNode=null;
+let samples=[], ratio=3, acc=0, cnt=0, phase=0, lvl=0, tick=null, busy=false, listening=false, loadingModel=false;
+let teaching=false, teachBuf=[], wakeLock=null, lastFired={}, history=[], repeatTimer=null, dismissTimer=null;
+let capOn=false, rec=null, capLines=[], lastNameHit=0;
+
+/* ---------- UI helpers ---------- */
+function say(t, err){ const m=$('#msg'); m.textContent=t||''; m.className='msg'+(err?' err':''); }
+function setUI(state){
+  document.body.classList.toggle('listening', state==='on');
+  document.body.classList.toggle('loading', state==='loading');
+  const b=$('#ear');
+  if(state==='on'){ $('#earTitle').textContent='Listening'; $('#earSub').textContent='Tap to stop'; b.setAttribute('aria-label','Stop listening'); }
+  else if(state==='loading'){ $('#earTitle').textContent='Getting ready'; $('#earSub').textContent='Loading the sound model'; }
+  else { $('#earTitle').textContent='Start'; $('#earSub').textContent='Tap to listen for sounds'; b.setAttribute('aria-label','Start listening'); }
+  $('#listenRow').hidden = state!=='on';
+}
+function renderHistory(){
+  const ul=$('#tl'); ul.innerHTML='';
+  history.slice(0,25).forEach(h=>{
+    const li=document.createElement('li'); li.style.setProperty('--c',h.color);
+    li.innerHTML='<span>'+h.icon+' '+esc(h.label)+'</span><time>'+esc(h.time)+'</time>';
+    ul.appendChild(li);
+  });
+  $('#tlEmpty').style.display = history.length ? 'none' : 'block';
+}
+
+/* ---------- audio context & tones ---------- */
+function ensureCtx(){
+  if(!actx){ const AC=window.AudioContext||window.webkitAudioContext; actx=new AC(); }
+  if(actx.state==='suspended') actx.resume();
+  return actx;
+}
+function beep(pattern){
+  if(!settings.tone) return;
+  try{
+    const c=ensureCtx(); let t=c.currentTime+0.03;
+    pattern.forEach(([f,d])=>{
+      const dur=d/1000;
+      if(f){
+        const o=c.createOscillator(), g=c.createGain();
+        o.type='triangle'; o.frequency.value=f;
+        g.gain.setValueAtTime(0.0001,t);
+        g.gain.exponentialRampToValueAtTime(0.7,t+0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+        o.connect(g); g.connect(c.destination); o.start(t); o.stop(t+dur+0.02);
+      }
+      t+=dur;
+    });
+  }catch(e){}
+}
+
+/* ---------- alerts ---------- */
+function showAlert(a, critical, conf){
+  const ov=$('#alert');
+  ov.style.setProperty('--ac', a.color);
+  $('#aIc').textContent=a.icon; $('#aTt').textContent=a.label; $('#aSs').textContent=a.sub||'';
+  ov.classList.add('on');
+  clearTimeout(dismissTimer); clearInterval(repeatTimer);
+  beep(a.beep);
+  if(critical){ repeatTimer=setInterval(()=>beep(a.beep), 2600); }
+  else { dismissTimer=setTimeout(hideAlert, 7000); }
+}
+function hideAlert(){ $('#alert').classList.remove('on'); clearTimeout(dismissTimer); clearInterval(repeatTimer); }
+$('#aBtn').addEventListener('click', hideAlert);
+$('#alert').addEventListener('click', e=>{ if(e.target.id==='alert') hideAlert(); });
+
+function trigger(a, critical){
+  const now=Date.now(), gap = critical ? 6000 : 9000;
+  if(lastFired[a.id] && now-lastFired[a.id] < gap) return;
+  lastFired[a.id]=now;
+  history.unshift({icon:a.icon, label:a.label, color:a.color, time:new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})});
+  renderHistory();
+  showAlert(a, critical);
+}
+
+/* ---------- model ---------- */
+const MODELS = [
+  ['https://tfhub.dev/google/tfjs-model/yamnet/tfjs/1', {fromTFHub:true}],
+  ['https://www.kaggle.com/models/google/yamnet/tfJs/tfjs/1', {fromTFHub:true}]
+];
+const CLASS_MAP = 'https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv';
+
+async function loadModel(){
+  if(model && names.length) return;
+  if(typeof tf==='undefined') throw new Error('TensorFlow.js did not load');
+  if(!names.length){
+    const r = await fetch(CLASS_MAP); if(!r.ok) throw new Error('Class list unavailable');
+    const lines=(await r.text()).split('\n').slice(1);
+    lines.forEach(l=>{
+      const m=l.match(/^(\d+),([^,]*),(?:"([^"]*)"|(.*))$/);
+      if(m) names[+m[1]] = (m[3]||m[4]||'').trim().toLowerCase();
+    });
+    RULES.forEach(r=>{ r.idx=[]; names.forEach((n,i)=>{ if(n && r.match.some(k=>n.includes(k))) r.idx.push(i); }); });
+  }
+  if(!model){
+    let lastErr;
+    for(const [url,opts] of MODELS){
+      try{ model = await tf.loadGraphModel(url, opts); break; }catch(e){ lastErr=e; }
+    }
+    if(!model) throw lastErr || new Error('Model unavailable');
+    const z=tf.zeros([15600]); const o=model.predict(z); z.dispose();
+    (Array.isArray(o)?o:Object.values(o)).forEach(t=>t.dispose());
+  }
+}
+
+/* ---------- listening ---------- */
+async function startListening(){
+  if(listening || loadingModel) return;
+  stopCaptions();
+  say('');
+  loadingModel=true; setUI('loading');
+  try{
+    const c=ensureCtx();              // must happen inside the tap
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    await loadModel();
+    ratio = c.sampleRate/16000; acc=0; cnt=0; phase=0; samples=[];
+    srcNode=c.createMediaStreamSource(stream);
+    proc=c.createScriptProcessor(4096,1,1);
+    muteNode=c.createGain(); muteNode.gain.value=0;
+    proc.onaudioprocess=onAudio;
+    srcNode.connect(proc); proc.connect(muteNode); muteNode.connect(c.destination);
+    listening=true; loadingModel=false; setUI('on');
+    tick=setInterval(infer, 450);
+    lockScreen();
+    requestAnimationFrame(meter);
+    say('Listening. Keep this screen open.');
+  }catch(e){
+    loadingModel=false; setUI('off'); cleanupAudio();
+    if(e && (e.name==='NotAllowedError'||e.name==='SecurityError')) say('Microphone is blocked. Open iPhone Settings → Safari → Microphone and allow this site, then try again.', true);
+    else if(e && e.name==='NotFoundError') say('No microphone was found on this device.', true);
+    else say('Could not load the sound model. Check your internet connection and try again. (Needed only the first time.)', true);
+  }
+}
+function cleanupAudio(){
+  clearInterval(tick); tick=null;
+  try{ proc && (proc.onaudioprocess=null, proc.disconnect()); }catch(e){}
+  try{ srcNode && srcNode.disconnect(); muteNode && muteNode.disconnect(); }catch(e){}
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+  proc=srcNode=muteNode=stream=null; samples=[]; lvl=0;
+  document.documentElement.style.setProperty('--lvl',0);
+  try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock=null;
+}
+function stopListening(){
+  if(!listening && !loadingModel){ cleanupAudio(); return; }
+  listening=false; teaching=false; cleanupAudio(); setUI('off'); say(''); exitBedside();
+}
+async function lockScreen(){
+  try{ if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && listening) lockScreen(); });
+
+function onAudio(ev){
+  const d=ev.inputBuffer.getChannelData(0); let sum=0;
+  for(let i=0;i<d.length;i++){
+    const s=d[i]; sum+=s*s; acc+=s; cnt++; phase+=1;
+    if(phase>=ratio){ samples.push(acc/cnt); acc=0; cnt=0; phase-=ratio; }
+  }
+  const rms=Math.sqrt(sum/d.length); lvl = lvl*0.7 + rms*0.3;
+  if(samples.length>31200) samples.splice(0, samples.length-31200);
+}
+function meter(){
+  if(!listening) return;
+  document.documentElement.style.setProperty('--lvl', Math.min(lvl*5, 0.22).toFixed(3));
+  requestAnimationFrame(meter);
+}
+
+/* ---------- inference ---------- */
+async function infer(){
+  if(busy || !listening || !model || samples.length<15600) return;
+  busy=true;
+  const w=Float32Array.from(samples.slice(-15600));
+  let sq=0; for(let i=0;i<w.length;i++) sq+=w[i]*w[i];
+  const rms=Math.sqrt(sq/w.length);
+  if(rms<0.003){ busy=false; return; }
+  let outs=[];
+  try{
+    const t=tf.tensor1d(w);
+    const o=model.predict(t); t.dispose();
+    outs=Array.isArray(o)?o:Object.values(o);
+    const scores=await outs[0].array();
+    const emb = outs[1] ? await outs[1].array() : null;
+    handle(scores, emb, rms);
+  }catch(e){ /* skip this window */ }
+  finally{ outs.forEach(t=>{ try{t.dispose();}catch(e){} }); busy=false; }
+}
+function meanEmb(emb){
+  const n=emb.length, m=new Array(emb[0].length).fill(0);
+  emb.forEach(r=>r.forEach((v,i)=>m[i]+=v/n));
+  const norm=Math.sqrt(m.reduce((a,v)=>a+v*v,0))||1;
+  return m.map(v=>v/norm);
+}
+function handle(scores, emb, rms){
+  if(teaching){
+    if(emb && rms>0.01) teachBuf.push(meanEmb(emb));
+    return;
+  }
+  const base = 0.7 - 0.05*settings.sens;
+  let best=null, bestMargin=0;
+  for(const r of RULES){
+    if(settings.off[r.id] || !r.idx || !r.idx.length) continue;
+    let m=0; scores.forEach(row=>r.idx.forEach(i=>{ if(row[i]>m) m=row[i]; }));
+    const thr = r.critical ? base-0.1 : base;
+    if(m>=thr && m-thr>=bestMargin){ best=r; bestMargin=m-thr; }
+  }
+  if(best){ trigger(best, !!best.critical); return; }
+  if(custom.length && emb && rms>0.01){
+    const e=meanEmb(emb), thr=0.97-0.012*settings.sens;
+    for(const c of custom){
+      let sim=0; c.vecs.forEach(v=>{ let d=0; for(let i=0;i<v.length;i++) d+=v[i]*e[i]; if(d>sim) sim=d; });
+      if(sim>=thr){ trigger(CUSTOM_ALERT(c), false); return; }
+    }
+  }
+}
+
+/* ---------- teach a sound ---------- */
+function renderCustom(){
+  const box=$('#customList'); box.innerHTML='';
+  custom.forEach(c=>{
+    const d=document.createElement('div'); d.className='line';
+    d.innerHTML='<span>✨ '+esc(c.name)+'</span>';
+    const b=document.createElement('button'); b.className='btn small'; b.textContent='Delete';
+    b.addEventListener('click',()=>{ custom=custom.filter(x=>x.id!==c.id); store.set('custom',custom); renderCustom(); });
+    d.appendChild(b); box.appendChild(d);
+  });
+}
+$('#teachBtn').addEventListener('click', ()=>{
+  const tm=$('#teachMsg'), nm=$('#cname').value.trim();
+  if(!listening){ tm.className='msg err'; tm.textContent='Start listening on the Sounds tab first.'; return; }
+  if(!nm){ tm.className='msg err'; tm.textContent='Give the sound a name first.'; return; }
+  teachBuf=[]; teaching=true; $('#teachBtn').disabled=true;
+  tm.className='msg'; tm.textContent='Recording… play the sound now.';
+  setTimeout(()=>{
+    teaching=false; $('#teachBtn').disabled=false;
+    if(teachBuf.length<4){ tm.className='msg err'; tm.textContent='I did not hear enough. Make the sound louder or hold the phone closer, then try again.'; return; }
+    const step=Math.max(1,Math.floor(teachBuf.length/6)); const vecs=[];
+    for(let i=0;i<teachBuf.length && vecs.length<6;i+=step) vecs.push(teachBuf[i].map(v=>+v.toFixed(3)));
+    custom.push({id:Date.now().toString(36), name:nm, vecs}); store.set('custom',custom);
+    $('#cname').value=''; renderCustom();
+    tm.textContent='Learned "'+nm+'". I will alert you when I hear it.';
+  }, 4500);
+});
+
+/* ---------- captions ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function nameRegex(){
+  const n=(settings.name||'').trim(); if(!n) return null;
+  return new RegExp('\\b'+n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i');
+}
+function renderCaps(interim){
+  const box=$('#capbox'); const rx=nameRegex();
+  const mark = t => { let h=esc(t); if(rx){ h=h.replace(new RegExp(rx.source,'gi'), m=>'<mark>'+m+'</mark>'); } return h; };
+  let html = capLines.slice(-40).map(l=>'<p>'+mark(l)+'</p>').join('');
+  if(interim) html += '<p class="interim">'+mark(interim)+'</p>';
+  box.innerHTML = html || '<p class="interim">Listening for speech…</p>';
+  box.scrollTop = box.scrollHeight;
+}
+function capSay(t, err){ const m=$('#capMsg'); m.textContent=t||''; m.className='msg'+(err?' err':''); }
+function startCaptions(){
+  if(!SR){ capSay('Captions are not supported in this browser. Open this page in Safari (not the home-screen app) and try again.', true); return; }
+  stopListening();
+  try{
+    rec=new SR(); rec.continuous=true; rec.interimResults=true; rec.lang=$('#lang').value;
+    rec.onresult=e=>{
+      let interim='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const r=e.results[i];
+        if(r.isFinal) capLines.push(r[0].transcript.trim()); else interim+=r[0].transcript;
+      }
+      renderCaps(interim);
+      const rx=nameRegex();
+      const text=(capLines.slice(-1)[0]||'')+' '+interim;
+      if(rx && rx.test(text) && Date.now()-lastNameHit>8000){ lastNameHit=Date.now(); trigger(NAME_ALERT,false); }
+    };
+    rec.onerror=e=>{
+      if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+        capOn=false; $('#capBtn').textContent='Start captions';
+        capSay('Speech access is blocked. Check iPhone Settings → Safari → Microphone, and make sure Siri & Dictation are on.', true);
+      }
+    };
+    rec.onend=()=>{ if(capOn){ try{ rec.start(); }catch(e){} } };
+    capOn=true; rec.start();
+    $('#capBtn').textContent='Stop captions'; capSay('Captions are on. Speak near the phone.');
+    renderCaps('');
+  }catch(e){ capOn=false; capSay('Could not start captions on this device.', true); }
+}
+function stopCaptions(){
+  if(!capOn && !rec) return;
+  capOn=false; try{ rec && rec.stop(); }catch(e){} rec=null;
+  $('#capBtn').textContent='Start captions'; capSay('');
+}
+$('#capBtn').addEventListener('click', ()=>{ capOn ? stopCaptions() : startCaptions(); });
+
+/* ---------- bedside ---------- */
+function enterBedside(){ document.body.classList.add('bedside'); }
+function exitBedside(){ document.body.classList.remove('bedside'); }
+$('#bedBtn').addEventListener('click', enterBedside);
+$('#bed').addEventListener('click', exitBedside);
+
+/* ---------- main button & tabs ---------- */
+$('#ear').addEventListener('click', ()=>{ if(loadingModel) return; listening ? stopListening() : startListening(); });
+document.querySelectorAll('.tabs button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected', x===b));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+    $('#v-'+b.dataset.v).classList.add('on');
+    window.scrollTo(0,0);
+  });
+});
+
+/* ---------- settings UI ---------- */
+function buildSettings(){
+  $('#sens').value=settings.sens; $('#tone').checked=settings.tone; $('#myname').value=settings.name;
+  $('#sens').addEventListener('input', e=>{ settings.sens=+e.target.value; saveSettings(); });
+  $('#tone').addEventListener('change', e=>{ settings.tone=e.target.checked; saveSettings(); if(e.target.checked) beep([[700,150]]); });
+  $('#myname').addEventListener('input', e=>{ settings.name=e.target.value; saveSettings(); });
+  const list=$('#ruleList');
+  RULES.forEach(r=>{
+    const row=document.createElement('div'); row.className='line';
+    const lab=document.createElement('label');
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!settings.off[r.id];
+    cb.addEventListener('change',()=>{ settings.off[r.id]=!cb.checked; saveSettings(); });
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(r.icon+' '+r.label));
+    const pv=document.createElement('button'); pv.className='btn small'; pv.textContent='Preview';
+    pv.addEventListener('click',()=>{ ensureCtx(); showAlert(r, false); });
+    row.appendChild(lab); row.appendChild(pv); list.appendChild(row);
+  });
+  renderCustom();
+}
+
+/* ---------- home-screen icon (generated, no files needed) ---------- */
+(function icon(){
+  try{
+    const c=document.createElement('canvas'); c.width=c.height=180; const g=c.getContext('2d');
+    g.fillStyle='#0E1320'; g.fillRect(0,0,180,180);
+    g.strokeStyle='#3DD6C6'; g.lineWidth=9; g.beginPath(); g.arc(90,90,56,0,Math.PI*2); g.stroke();
+    g.strokeStyle='#FFB020'; g.lineWidth=9; g.lineCap='round';
+    [[-26,14],[-13,32],[0,46],[13,32],[26,14]].forEach(([x,h])=>{ g.beginPath(); g.moveTo(90+x,90-h/1); g.lineTo(90+x,90+h); g.stroke(); });
+    $('#touchIcon').href=c.toDataURL('image/png');
+  }catch(e){}
+})();
+
+buildSettings(); renderHistory();
+})();
+</script>
+</body>
+</html>
