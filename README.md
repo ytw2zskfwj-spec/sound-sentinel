@@ -13,7 +13,7 @@ hard-of-hearing users with full-screen flashes, tones, and live captions.
   and never uploaded
 
 ## Try it
-Open the live app: https://YOURNAME.github.io/sound-sentinel
+Open the live app: https://ADAMsScienceproject.github.io/sound-sentinel
 On iPhone, tap Share, then Add to Home Screen.
 
 ## Built with
